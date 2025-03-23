@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Speech-to-Text Translation</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">  <!-- Correctly linked CSS -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
 </head>
 <body>
     <div class="container">
@@ -17,8 +17,12 @@
             {% endfor %}
         </select>
         
-        <button id="record-button">Record</button>
-        <button id="stop-button" disabled>Stop</button>
+        <div class="controls">
+            <button id="record-button">Record</button>
+            <button id="stop-button" disabled>Stop</button>
+            <input type="file" id="upload-audio" accept="audio/*">
+            <button id="upload-button">Upload</button>
+        </div>
         
         <div id="result">
             <h2>Recognized Text:</h2>
@@ -36,103 +40,56 @@
         const languageSelect = document.getElementById('language');
         const recordButton = document.getElementById('record-button');
         const stopButton = document.getElementById('stop-button');
-        let recording = false;
+        const uploadAudio = document.getElementById('upload-audio');
+        const uploadButton = document.getElementById('upload-button');
         let mediaRecorder;
         let chunks = [];
-      
-        // Add event listener to record button
+
         recordButton.addEventListener('click', async () => {
-            if (!recording) {
-                recording = true;
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                mediaRecorder = new MediaRecorder(stream);
+                mediaRecorder.ondataavailable = (e) => chunks.push(e.data);
+                mediaRecorder.onstop = processRecording;
+                mediaRecorder.start();
                 recordButton.disabled = true;
                 stopButton.disabled = false;
-        
-                try {
-                    // Request access to the user's microphone
-                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        
-                    // Initialize the MediaRecorder with the audio stream
-                    mediaRecorder = new MediaRecorder(stream);
-        
-                    // When data is available, push it to the chunks array
-                    mediaRecorder.ondataavailable = function (e) {
-                        chunks.push(e.data);
-                    };
-        
-                    // When the recording stops, send the audio to the server
-                    mediaRecorder.onstop = function () {
-                        const audioBlob = new Blob(chunks, { type: 'audio/wav' });
-                        const formData = new FormData();
-                        formData.append('audio', audioBlob);
-                        formData.append('language', languageSelect.value);
-        
-                        // Send the recorded audio and selected language to the server
-                        fetch('/translate', {
-                            method: 'POST',
-                            body: formData,
-                        })
-                        .then((response) => {
-                            if (!response.ok) {
-                                return response.json().then(errorData => {
-                                    throw new Error(errorData.error || 'Unknown error');
-                                });
-                            }
-                            return response.json();
-                        })
-                        .then((data) => {
-                            console.log("Server response:", data);  // Log the server response
-                            
-                            if (data.recognized_text && data.translated_text) {
-                                // Display the recognized text
-                                const recognizedTextElement = document.getElementById('recognized-text');
-                                recognizedTextElement.textContent = data.recognized_text;
-        
-                                // Display the translated text
-                                const translatedTextElement = document.getElementById('translated-text');
-                                translatedTextElement.textContent = data.translated_text;
-        
-                                // Set the translated audio file in the audio player
-                                const translatedAudioElement = document.getElementById('translated-audio');
-                                translatedAudioElement.src = data.audio_file;
-                                translatedAudioElement.play();
-                            } else {
-                                console.error('Error: No recognized or translated text returned.');
-                            }
-                        })
-                        .catch((error) => {
-                            console.error('Fetch error:', error);
-                            alert(`Error: ${error.message}`);
-                        });
-        
-                        // Reset chunks array for the next recording
-                        chunks = [];
-                    };
-        
-                    // Start recording
-                    mediaRecorder.start();
-                    console.log("Recording started.");
-                } catch (err) {
-                    console.error('Error accessing microphone:', err);
-                    alert('Could not access your microphone. Please check permissions.');
-                    recordButton.disabled = false;
-                    stopButton.disabled = true;
-                    recording = false;
-                }
+            } catch (err) {
+                console.error('Microphone access error:', err);
             }
         });
-        
-        // Add event listener to stop button
+
         stopButton.addEventListener('click', () => {
-            if (recording) {
-                recording = false;
-                recordButton.disabled = false;
-                stopButton.disabled = true;
-        
-                // Stop the recording
-                mediaRecorder.stop();
-                console.log("Recording stopped.");
-            }
+            mediaRecorder.stop();
+            recordButton.disabled = false;
+            stopButton.disabled = true;
         });
+
+        function processRecording() {
+            const audioBlob = new Blob(chunks, { type: 'audio/webm' });
+            sendAudioToServer(audioBlob);
+            chunks = [];
+        }
+
+        uploadButton.addEventListener('click', () => {
+            const file = uploadAudio.files[0];
+            if (file) sendAudioToServer(file);
+        });
+
+        function sendAudioToServer(audioFile) {
+            const formData = new FormData();
+            formData.append('audio', audioFile);
+            formData.append('language', languageSelect.value);
+
+            fetch('/translate', { method: 'POST', body: formData })
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('recognized-text').textContent = data.recognized_text;
+                    document.getElementById('translated-text').textContent = data.translated_text;
+                    document.getElementById('translated-audio').src = data.audio_file;
+                })
+                .catch(error => console.error('Translation error:', error));
+        }
     </script>      
 </body>
 </html>

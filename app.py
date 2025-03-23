@@ -1,19 +1,16 @@
-from flask import Flask, render_template, request, jsonify, send_from_directory
+from flask import Flask, render_template, request, jsonify
 import speech_recognition as sr
-from googletrans import Translator
+from deep_translator import GoogleTranslator 
 from gtts import gTTS
 import os
-import tempfile
 import sqlite3
 from pydub import AudioSegment
 
 app = Flask(__name__)
-translator = Translator()
+translator = GoogleTranslator(source='auto', target='en')
 recognizer = sr.Recognizer()
 
 UPLOAD_FOLDER = os.path.join(app.root_path, 'static', 'audio')
-TEMP_FOLDER = os.path.join(UPLOAD_FOLDER, 'temp_files')
-os.makedirs(TEMP_FOLDER, exist_ok=True)
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 LANGUAGES = {
@@ -41,10 +38,11 @@ def insert_translation(recognized_text, translated_text, audio_file_path):
     conn.commit()
     conn.close()
 
-def convert_to_wav(input_file_path, output_file_path):
-    audio = AudioSegment.from_file(input_file_path)
-    audio.export(output_file_path, format="wav")
-    return output_file_path
+def convert_webm_to_wav(input_path):
+    output_path = input_path.replace(".webm", ".wav")
+    audio = AudioSegment.from_file(input_path, format="webm")
+    audio.export(output_path, format="wav")
+    return output_path
 
 def speech_to_text(audio_file_path):
     with sr.AudioFile(audio_file_path) as source:
@@ -67,24 +65,22 @@ def translate():
         if target_lang not in LANGUAGES.values():
             return jsonify({'error': f"Unsupported language code: {target_lang}"}), 400
 
-        with tempfile.NamedTemporaryFile(delete=False, dir=TEMP_FOLDER, suffix=".wav") as temp_audio:
-            audio_data.save(temp_audio.name)
-            input_audio_path = temp_audio.name
+        temp_path = os.path.join(UPLOAD_FOLDER, audio_data.filename)
+        audio_data.save(temp_path)
 
-        with tempfile.NamedTemporaryFile(delete=False, dir=TEMP_FOLDER, suffix=".wav") as temp_converted:
-            converted_audio_path = convert_to_wav(input_audio_path, temp_converted.name)
+        if temp_path.endswith(".webm"):
+            wav_path = convert_webm_to_wav(temp_path)
+        else:
+            wav_path = temp_path
 
-        recognized_text = speech_to_text(converted_audio_path)
-        translated = translator.translate(recognized_text, dest=target_lang).text
+        recognized_text = speech_to_text(wav_path)
+        translated = translator.translate(recognized_text, target_lang)
 
-        with tempfile.NamedTemporaryFile(delete=False, dir=UPLOAD_FOLDER, suffix=".mp3") as temp_translated_audio:
-            tts = gTTS(translated, lang=target_lang)
-            tts.save(temp_translated_audio.name)
-            translated_audio_path = temp_translated_audio.name
+        translated_audio_path = os.path.join(UPLOAD_FOLDER, f"translated_{os.path.basename(wav_path)}.mp3")
+        tts = gTTS(translated, lang=target_lang)
+        tts.save(translated_audio_path)
 
         insert_translation(recognized_text, translated, os.path.basename(translated_audio_path))
-        os.remove(input_audio_path)
-        os.remove(converted_audio_path)
 
         return jsonify({
             'recognized_text': recognized_text,

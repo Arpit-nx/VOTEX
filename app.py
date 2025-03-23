@@ -3,7 +3,7 @@ import speech_recognition as sr
 from deep_translator import GoogleTranslator 
 from gtts import gTTS
 import os
-import sqlite3
+from pymongo import MongoClient
 from pydub import AudioSegment
 
 app = Flask(__name__)
@@ -19,24 +19,10 @@ LANGUAGES = {
     "Japanese": "ja"
 }
 
-def init_db():
-    conn = sqlite3.connect("translations.db")
-    cursor = conn.cursor()
-    cursor.execute('''CREATE TABLE IF NOT EXISTS translations (
-                          id INTEGER PRIMARY KEY AUTOINCREMENT,
-                          recognized_text TEXT,
-                          translated_text TEXT,
-                          audio_file_path TEXT)''')
-    conn.commit()
-    conn.close()
-
-def insert_translation(recognized_text, translated_text, audio_file_path):
-    conn = sqlite3.connect("translations.db")
-    cursor = conn.cursor()
-    cursor.execute("INSERT INTO translations (recognized_text, translated_text, audio_file_path) VALUES (?, ?, ?)",
-                   (recognized_text, translated_text, audio_file_path))
-    conn.commit()
-    conn.close()
+# MongoDB Setup
+client = MongoClient("mongodb://localhost:27017/")  # Update with your MongoDB URI
+mongo_db = client["votex_db"]
+translations_collection = mongo_db["translations"]
 
 def convert_webm_to_wav(input_path):
     output_path = input_path.replace(".webm", ".wav")
@@ -80,17 +66,22 @@ def translate():
         tts = gTTS(translated, lang=target_lang)
         tts.save(translated_audio_path)
 
-        insert_translation(recognized_text, translated, os.path.basename(translated_audio_path))
+        # Store translation data in MongoDB
+        translation_data = {
+            "recognized_text": recognized_text,
+            "translated_text": translated,
+            "audio_file_path": f"/static/audio/{os.path.basename(translated_audio_path)}"
+        }
+        translations_collection.insert_one(translation_data)
 
         return jsonify({
             'recognized_text': recognized_text,
             'translated_text': translated,
-            'audio_file': f'/static/audio/{os.path.basename(translated_audio_path)}'
+            'audio_file': translation_data['audio_file_path']
         })
 
     except Exception as e:
         return jsonify({'error': f"An unexpected error occurred: {str(e)}"}), 500
 
 if __name__ == '__main__':
-    init_db()
     app.run(debug=True)

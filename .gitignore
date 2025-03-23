@@ -1,0 +1,38 @@
+# Ignore Python virtual environment
+venv/
+env/
+
+# Ignore compiled Python files
+__pycache__/
+*.pyc
+*.pyo
+
+# Ignore IDE/editor settings
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Ignore OS-specific files
+.DS_Store
+Thumbs.db
+
+# Ignore log and cache files
+*.log
+logs/
+cache/
+
+# Ignore audio/video/image files (optional, if not needed)
+*.wav
+*.mp3
+*.mp4
+*.png
+*.jpg
+*.jpeg
+*.gif
+
+# Ignore database files (optional, if using SQLite)
+*.sqlite3
+*.db
+
+*.idea

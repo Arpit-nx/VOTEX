@@ -1,6 +1,9 @@
 from flask import Flask, render_template, request, jsonify
 import speech_recognition as sr
 from googletrans import Translator
+from gtts import gTTS
+import os
+import tempfile
 
 app = Flask(__name__)
 translator = Translator()
@@ -23,10 +26,23 @@ def translate():
         audio = r.record(source)
 
     try:
+        # Recognize speech using Google Web Speech API
         input_text = r.recognize_google(audio)
+        
+        # Translate the recognized text to the target language
         target_lang = request.form['language']
         translated = translator.translate(input_text, dest=target_lang)
-        return jsonify({'input_text': input_text, 'translated_text': translated.text})
+        translated_text = translated.text
+        
+        # Convert the translated text to speech
+        tts = gTTS(text=translated_text, lang=target_lang, slow=False)
+        
+        # Save the audio file to a temporary location
+        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
+        tts.save(temp_file.name)
+        
+        return jsonify({'input_text': input_text, 'translated_text': translated_text, 'audio_file': temp_file.name})
+    
     except sr.UnknownValueError:
         return jsonify({'error': 'Could not understand audio.'}), 400
     except sr.RequestError as e:
